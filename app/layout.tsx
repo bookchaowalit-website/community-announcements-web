@@ -1,15 +1,29 @@
 import type { Metadata } from "next";
-import { Lora, Work_Sans } from "next/font/google";
+import { Geist } from "next/font/google";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/next";
 
-const bulletinDisplay = Lora({ variable: "--font-bulletin-display", subsets: ["latin"] });
-const bulletinSans = Work_Sans({ variable: "--font-bulletin-sans", subsets: ["latin"] });
-const bulletinMono = Work_Sans({ variable: "--font-bulletin-mono", subsets: ["latin"] });
+// The font variable sits on <html>: the App shell tokens live on :root and read it from there.
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 
-export const metadata: Metadata = { title: "Circular — Notice desk", description: "Compose and review local announcements.", metadataBase: new URL("https://announcements.bookchaowalit.com"), alternates: { canonical: "https://announcements.bookchaowalit.com" } };
+const title = "Announcements | Bookchaowalit";
+const description = "A local notice desk: write updates, set their state (draft, scheduled, published), and keep a readable board of what visitors should know.";
+
+export const metadata: Metadata = {
+  title,
+  description,
+  authors: [{ name: "Bookchaowalit", url: "https://bookchaowalit.com" }],
+  creator: "Bookchaowalit",
+  metadataBase: new URL(SITE_URL),
+  alternates: { canonical: "/" },
+  openGraph: { type: "website", title, description, siteName: "Bookchaowalit" },
+  robots: { index: true, follow: true },
+};
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" className={`${bulletinDisplay.variable} ${bulletinSans.variable} ${bulletinMono.variable}`}><body><Analytics /><SpeedInsights />{children}</body></html>;
+  return (
+    <html lang="en" className={geistSans.variable}>
+      <body>{children}</body>
+    </html>
+  );
 }

@@ -57,3 +57,13 @@ describe("helpers", () => {
     expect(removeNotice(SEED, "2").map((n) => n.id)).toEqual(["1", "3"]);
   });
 });
+
+describe("restoreNotice", () => {
+  it("puts a notice back before its old neighbour, at the end otherwise, never twice", async () => {
+    const { SEED, restoreNotice } = await import("@/lib/announcements");
+    const [a, b] = SEED;
+    expect(restoreNotice([b], a, b.id)).toEqual([a, b]);
+    expect(restoreNotice([a], b, null)).toEqual([a, b]);
+    expect(restoreNotice([a, b], b, null)).toEqual([a, b]);
+  });
+});

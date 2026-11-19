@@ -71,3 +71,10 @@ export function positionLabel(index: number): string {
 export function formatNotice(notice: Notice): string {
   return `${notice.title}\n\n${notice.body}`;
 }
+
+/** Put a removed notice back before the notice that followed it (or at the end), for Undo. */
+export function restoreNotice(notices: Notice[], notice: Notice, beforeId: string | null): Notice[] {
+  if (notices.some((item) => item.id === notice.id)) return notices;
+  const at = beforeId ? notices.findIndex((item) => item.id === beforeId) : -1;
+  return at < 0 ? [...notices, notice] : [...notices.slice(0, at), notice, ...notices.slice(at)];
+}

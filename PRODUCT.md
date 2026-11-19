@@ -26,7 +26,7 @@ A portfolio visitor who wants to see a small compose-and-board UI for public not
 
 - No RSS feed, social sharing or persistent public record (claims removed from the portfolio card in the 2026-10
   review). States are labels only: nothing is scheduled, published or emailed.
-- No editing of a pinned notice, no account, no sync. No product analytics beyond Vercel Analytics.
+- No editing of a pinned notice, no account, no sync. No product analytics.
 
 ## Live URL and deploy state
 
