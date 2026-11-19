@@ -125,3 +125,43 @@ describe("remove and undo", () => {
     expect(host.textContent).toContain("The board is empty");
   });
 });
+
+describe("batch Undo", () => {
+  afterEach(() => { vi.useRealTimers(); });
+  // detail 0 = keyboard (Enter/Space) click, 1 = pointer click.
+  const click = (el: Element, detail: number) => act(() => { el.dispatchEvent(new MouseEvent("click", { bubbles: true, detail })); });
+  const shownRows = () => [...host.querySelectorAll<HTMLElement>(".as-row[data-notice]")];
+  const rowIds = () => shownRows().map((row) => row.getAttribute("data-notice"));
+  const removeButton = (i: number) => shownRows()[i].querySelector<HTMLButtonElement>(".as-danger")!;
+  const undoButton = () => host.querySelector<HTMLButtonElement>(".as-toast button")!;
+
+  it("consecutive removes restore together with one Undo", () => {
+    vi.useFakeTimers();
+    const before = rowIds();
+    expect(before.length).toBeGreaterThanOrEqual(3);
+    click(removeButton(1), 1);
+    act(() => { vi.advanceTimersByTime(4000); });
+    click(removeButton(0), 1);
+    expect(rowIds()).toEqual(before.slice(2));
+    expect(host.querySelector(".as-toast span")!.textContent).toBe("Removed 2 notices");
+    expect(undoButton().getAttribute("aria-label")).toBe("Undo remove of 2 notices");
+    // The second removal restarted the 6 s window: 4 s later it is still open.
+    act(() => { vi.advanceTimersByTime(4000); });
+    click(undoButton(), 1);
+    expect(rowIds()).toEqual(before);
+    expect(host.querySelector(".as-toast")).toBeNull();
+    expect(host.querySelector(".as-sr[role=status]")!.textContent).toBe("Restored 2 notices.");
+  });
+
+  it("keyboard remove focuses Undo", () => {
+    const before = rowIds();
+    click(removeButton(0), 0);
+    expect(document.activeElement).toBe(undoButton());
+    click(removeButton(0), 0);
+    expect(document.activeElement).toBe(undoButton());
+    click(undoButton(), 0);
+    expect(rowIds()).toEqual(before);
+    // Back on the restored row removed last (it was second in the list).
+    expect(document.activeElement).toBe(removeButton(1));
+  });
+});

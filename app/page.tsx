@@ -5,7 +5,10 @@ import { AppFoot, AppTop, ListButton, Pill, PlusIcon, type Tone } from "@/compon
 import { FILTERS, SEED, STATUSES, STORAGE_KEY, addNotice, filterNotices, formatNotice, parseNotices, restoreNotice, type Draft, type Filter, type Notice, type NoticeStatus as Status } from "@/lib/announcements";
 import { useStoredState } from "@/lib/use-stored-state";
 
-type Removed = { notice: Notice; beforeId: string | null; nextShown?: string; prevShown?: string; viaKeyboard: boolean };
+// beforeId: the notice that followed it when it was removed. nextShown / prevShown: the rows shown around it, for focus.
+type RemovedEntry = { notice: Notice; beforeId: string | null; nextShown?: string; prevShown?: string };
+type RemovedBatch = { entries: RemovedEntry[]; viaKeyboard: boolean };
+const removedLabel = (entries: RemovedEntry[]) => (entries.length === 1 ? `Removed “${entries[0].notice.title}”` : `Removed ${entries.length} notices`);
 const EMPTY_DRAFT: Draft = { title: "", body: "", section: "Studio", status: "Draft" };
 const TONE: Record<Status, Tone> = { Draft: "grey", Scheduled: "amber", Published: "green" };
 const LIST_LABEL: Record<Filter, string> = { All: "All notices", Published: "Published", Scheduled: "Scheduled", Draft: "Drafts" };
@@ -50,7 +53,11 @@ export default function Home() {
   const [filter, setFilter] = useState<Filter>("All");
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-  const [removed, setRemoved] = useState<Removed | null>(null);
+  // Every removal still inside the Undo window: one Undo puts them all back where they were.
+  const [removed, setRemovedState] = useState<RemovedBatch | null>(null);
+  // The latest batch, so two removals before a re-render still both land in it.
+  const removedRef = useRef<RemovedBatch | null>(null);
+  const setRemoved = (batch: RemovedBatch | null) => { removedRef.current = batch; setRemovedState(batch); };
   const [toastFocused, setToastFocused] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const titleRef = useRef<HTMLInputElement>(null);
@@ -92,10 +99,10 @@ export default function Home() {
     observer?.observe(toast);
     return () => { observer?.disconnect(); rootStyle.removeProperty("--as-toast-space"); };
   }, [toastShown]);
-  // The toast closes 6 s after a removal, but never while it holds focus.
+  // The toast closes 6 s after the latest removal (each removal restarts it), but never while it holds focus.
   useEffect(() => {
     if (!removed || toastFocused) return;
-    const timer = window.setTimeout(() => setRemoved(null), 6000);
+    const timer = window.setTimeout(() => { removedRef.current = null; setRemovedState(null); }, 6000);
     return () => window.clearTimeout(timer);
   }, [removed, toastFocused]);
 
@@ -120,8 +127,10 @@ export default function Home() {
     if (index < 0) return;
     const shownAt = visible.findIndex((item) => item.id === notice.id);
     setItems((current) => current.filter((item) => item.id !== notice.id));
-    setRemoved({ notice, beforeId: items[index + 1]?.id ?? null, nextShown: visible[shownAt + 1]?.id, prevShown: shownAt > 0 ? visible[shownAt - 1].id : undefined, viaKeyboard });
-    setAnnouncement(`Removed “${notice.title}”. Undo is available for a few seconds.`);
+    const entry: RemovedEntry = { notice, beforeId: items[index + 1]?.id ?? null, nextShown: visible[shownAt + 1]?.id, prevShown: shownAt > 0 ? visible[shownAt - 1].id : undefined };
+    const entries = [...(removedRef.current?.entries ?? []), entry];
+    setRemoved({ entries, viaKeyboard });
+    setAnnouncement(entries.length === 1 ? `Removed “${notice.title}”. Undo is available for a few seconds.` : `Removed ${entries.length} notices. Undo is available for a few seconds.`);
   }
   async function copy(notice: Notice) {
     try {
@@ -134,16 +143,21 @@ export default function Home() {
     }
   }
   function closeToast(ids?: string[]) {
-    focusNext.current = ids ?? [removed?.nextShown, removed?.prevShown].filter((id): id is string => Boolean(id));
+    const last = removedRef.current?.entries.at(-1);
+    // Dismissed: the row after the removed one, else the one before it.
+    focusNext.current = ids ?? [last?.nextShown, last?.prevShown].filter((id): id is string => Boolean(id));
     setRemoved(null);
     setToastFocused(false);
   }
   function undo() {
-    if (!removed) return;
-    const { notice, beforeId } = removed;
-    setItems((current) => restoreNotice(current, notice, beforeId));
-    setAnnouncement(`Restored “${notice.title}”.`);
-    closeToast([notice.id]);
+    const entries = removedRef.current?.entries;
+    if (!entries?.length) return;
+    // Latest removal first: each goes back before the notice that followed it when it was removed.
+    setItems((current) => entries.reduceRight((list, { notice, beforeId }) => restoreNotice(list, notice, beforeId), current));
+    const latest = entries[entries.length - 1].notice;
+    setAnnouncement(entries.length === 1 ? `Restored “${latest.title}”.` : `Restored ${entries.length} notices.`);
+    // Undone: back to the restored row the user removed last.
+    closeToast([latest.id]);
   }
 
   const ready = Boolean(draft.title.trim() && draft.body.trim());
@@ -257,8 +271,8 @@ export default function Home() {
           onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setToastFocused(false); }}
           onKeyDown={(event) => { if (event.key === "Escape") closeToast(); }}
         >
-          <span>Removed “{removed.notice.title}”</span>
-          <button ref={undoRef} type="button" className="as-plain" onClick={undo} aria-label="Undo remove">Undo</button>
+          <span>{removedLabel(removed.entries)}</span>
+          <button ref={undoRef} type="button" className="as-plain" onClick={undo} aria-label={removed.entries.length === 1 ? "Undo remove" : `Undo remove of ${removed.entries.length} notices`}>Undo</button>
         </div>
       ) : null}
 
