@@ -33,6 +33,9 @@ A portfolio visitor who wants to see a small compose-and-board UI for public not
 - Two tabs: every add, remove and Undo reads the latest saved board and writes in one synchronous step, a change
   that alters nothing writes nothing, and a save in another tab shows here through the `storage` event. There is no
   cross-tab lock, so two tabs saving in the same instant can still lose one save (Codex report -54c6bcad1a).
+- Undo after another tab removed the next notice: Undo puts a notice back before the notice that followed it when it
+  was removed; if another tab has removed that one too, it goes to the end of the board (A, B, C: remove A here, B
+  there, Undo gives C, A). Multi-tab only; app frozen, not fixed (Codex report -905725cf4c).
 
 ## Live URL and deploy state
 
