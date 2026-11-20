@@ -28,6 +28,12 @@ A portfolio visitor who wants to see a small compose-and-board UI for public not
   review). States are labels only: nothing is scheduled, published or emailed.
 - No editing of a pinned notice, no account, no sync. No product analytics.
 
+## Known limits
+
+- Two tabs: every add, remove and Undo reads the latest saved board and writes in one synchronous step, a change
+  that alters nothing writes nothing, and a save in another tab shows here through the `storage` event. There is no
+  cross-tab lock, so two tabs saving in the same instant can still lose one save (Codex report -54c6bcad1a).
+
 ## Live URL and deploy state
 
 - Live: https://announcements.bookchaowalit.com (HTTP 200 on 2026-10-23).

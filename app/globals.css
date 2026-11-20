@@ -8,3 +8,5 @@ html, body { margin: 0; background: var(--as-bg); }
 .as-actions-row.as-center { justify-content: center; }
 .an-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0; }
 @media (max-width: 760px) { .as-row .an-actions { grid-column: 2; grid-row: 1 / span 2; flex-direction: column; align-items: flex-end; } }
+/* A failed Copy is said in the row, not only to screen readers. --as-danger is 5.4:1 on white, 6.4:1 on the dark surface. */
+.an-copy-error { margin: 4px 0 0; font-size: 13px; color: var(--as-danger); }

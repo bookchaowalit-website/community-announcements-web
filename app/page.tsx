@@ -9,6 +9,7 @@ import { useStoredState } from "@/lib/use-stored-state";
 type RemovedEntry = { notice: Notice; beforeId: string | null; nextShown?: string; prevShown?: string };
 type RemovedBatch = { entries: RemovedEntry[]; viaKeyboard: boolean };
 const removedLabel = (entries: RemovedEntry[]) => (entries.length === 1 ? `Removed “${entries[0].notice.title}”` : `Removed ${entries.length} notices`);
+const COPY_FAILED = "Copy is not available in this browser. Select the text instead.";
 const EMPTY_DRAFT: Draft = { title: "", body: "", section: "Studio", status: "Draft" };
 const TONE: Record<Status, Tone> = { Draft: "grey", Scheduled: "amber", Published: "green" };
 const LIST_LABEL: Record<Filter, string> = { All: "All notices", Published: "Published", Scheduled: "Scheduled", Draft: "Drafts" };
@@ -32,7 +33,17 @@ function NoticeBody({ body }: { body: string }) {
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
     observer?.observe(el);
     measure();
-    return () => observer?.disconnect();
+    // A web font that loads later can widen the text without resizing the box, so measure again then.
+    let live = true;
+    const fonts = typeof document !== "undefined" ? document.fonts : undefined;
+    const remeasure = () => { if (live) measure(); };
+    fonts?.ready?.then(remeasure, () => {});
+    fonts?.addEventListener?.("loadingdone", remeasure);
+    return () => {
+      live = false;
+      observer?.disconnect();
+      fonts?.removeEventListener?.("loadingdone", remeasure);
+    };
   }, [body]);
   const long = expanded || clipped || body.includes("\n");
   return (
@@ -70,6 +81,7 @@ export default function Home() {
   const visible = useMemo(() => filterNotices(items, filter, query), [items, filter, query]);
   const counts = useMemo(() => Object.fromEntries(FILTERS.map((value) => [value, value === "All" ? items.length : items.filter((item) => item.status === value).length])) as Record<Filter, number>, [items]);
   const [copied, setCopied] = useState<string | null>(null);
+  const [copyFailed, setCopyFailed] = useState<string | null>(null);
 
   // Opening the composer focuses the author; closing it returns focus to New notice.
   useEffect(() => {
@@ -108,9 +120,10 @@ export default function Home() {
 
   function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const next = addNotice(items, draft, createId(), Date.now());
-    if (next === items) return;
-    setItems(next);
+    // Added to the latest saved board, not the list this tab rendered (another tab may have saved since).
+    const id = createId();
+    const next = setItems((current) => addNotice(current, draft, id, Date.now()));
+    if (next[0]?.id !== id) return;
     // Show the new notice: its own list, and no search that might hide it.
     if (filter !== "All" && filter !== draft.status) setFilter(draft.status);
     setQuery("");
@@ -123,11 +136,18 @@ export default function Home() {
     searchRef.current?.focus();
   }
   function remove(notice: Notice, viaKeyboard: boolean) {
-    const index = items.findIndex((item) => item.id === notice.id);
-    if (index < 0) return;
     const shownAt = visible.findIndex((item) => item.id === notice.id);
-    setItems((current) => current.filter((item) => item.id !== notice.id));
-    const entry: RemovedEntry = { notice, beforeId: items[index + 1]?.id ?? null, nextShown: visible[shownAt + 1]?.id, prevShown: shownAt > 0 ? visible[shownAt - 1].id : undefined };
+    // Removed from the latest saved board; its neighbour there is what Undo puts it back before.
+    const hit = { found: false, beforeId: null as string | null };
+    setItems((current) => {
+      const index = current.findIndex((item) => item.id === notice.id);
+      if (index < 0) return current;
+      hit.found = true;
+      hit.beforeId = current[index + 1]?.id ?? null;
+      return current.filter((item) => item.id !== notice.id);
+    });
+    if (!hit.found) return;
+    const entry: RemovedEntry = { notice, beforeId: hit.beforeId, nextShown: visible[shownAt + 1]?.id, prevShown: shownAt > 0 ? visible[shownAt - 1].id : undefined };
     const entries = [...(removedRef.current?.entries ?? []), entry];
     setRemoved({ entries, viaKeyboard });
     setAnnouncement(entries.length === 1 ? `Removed “${notice.title}”. Undo is available for a few seconds.` : `Removed ${entries.length} notices. Undo is available for a few seconds.`);
@@ -135,11 +155,16 @@ export default function Home() {
   async function copy(notice: Notice) {
     try {
       await navigator.clipboard.writeText(formatNotice(notice));
+      setCopyFailed(null);
       setCopied(notice.id);
       setAnnouncement(`Copied “${notice.title}”.`);
       window.setTimeout(() => setCopied((current) => (current === notice.id ? null : current)), 2000);
     } catch {
-      setAnnouncement("Copy is not available in this browser. Select the text instead.");
+      // Shown in the row as well as announced, so a sighted user also sees that nothing was copied.
+      setCopied(null);
+      setCopyFailed(notice.id);
+      setAnnouncement(COPY_FAILED);
+      window.setTimeout(() => setCopyFailed((current) => (current === notice.id ? null : current)), 6000);
     }
   }
   function closeToast(ids?: string[]) {
@@ -231,6 +256,7 @@ export default function Home() {
                     <h3>{notice.title}</h3>
                     <NoticeBody body={notice.body} />
                     <p className="as-row-meta">{`${notice.section} · ${notice.date === "—" ? "No date yet" : notice.date}`}</p>
+                    {copyFailed === notice.id ? <p className="an-copy-error">{COPY_FAILED}</p> : null}
                   </div>
                   <Pill tone={TONE[notice.status]}>{notice.status}</Pill>
                   <div className="an-actions">

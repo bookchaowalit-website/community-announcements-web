@@ -101,6 +101,64 @@ describe("lists, search and copy", () => {
     await act(async () => { $(`[aria-label="Copy ${SHELF}"]`)!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
     expect(host.textContent).toContain("Copy is not available");
   });
+
+  it("a failed Copy is shown in the notice's row, not only to screen readers", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("no")) } });
+    await act(async () => { $(`[aria-label="Copy ${SHELF}"]`)!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    const row = $(`[aria-label="Copy ${SHELF}"]`)!.closest(".as-row")!;
+    const shown = row.querySelector(".an-copy-error");
+    expect(shown?.textContent).toContain("Copy is not available");
+    expect(shown?.closest(".as-sr")).toBeNull();
+  });
+});
+
+describe("two tabs", () => {
+  const otherTab = { id: "other-tab", title: "Saved in another tab", body: "Added while this tab was open.", status: "Draft", section: "Studio", date: "—" };
+  function saveFromOtherTab(event = false) {
+    const list = [otherTab, ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") ?? []];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    if (event) act(() => { window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY })); });
+  }
+  beforeEach(() => {
+    // Save the seed once, as a real visit would after its first change.
+    press(button("New notice"));
+    type($<HTMLInputElement>(".as-composer input")!, "First");
+    type($<HTMLTextAreaElement>(".as-composer textarea")!, "Body");
+    press(button("Pin", $(".as-composer")!));
+  });
+
+  it("removing in a stale tab keeps the notice another tab saved", () => {
+    saveFromOtherTab();
+    press($(`[aria-label="Remove ${SHELF}"]`)!);
+    const titles = JSON.parse(localStorage.getItem(STORAGE_KEY)!).map((n: { title: string }) => n.title);
+    expect(titles).toContain("Saved in another tab");
+    expect(titles).not.toContain(SHELF);
+  });
+
+  it("pinning in a stale tab keeps the notice another tab saved", () => {
+    saveFromOtherTab();
+    press(button("New notice"));
+    type($<HTMLInputElement>(".as-composer input")!, "Second");
+    type($<HTMLTextAreaElement>(".as-composer textarea")!, "Body");
+    press(button("Pin", $(".as-composer")!));
+    const titles = JSON.parse(localStorage.getItem(STORAGE_KEY)!).map((n: { title: string }) => n.title);
+    expect(titles.slice(0, 2)).toEqual(["Second", "Saved in another tab"]);
+  });
+
+  it("a save in another tab shows here on its storage event", () => {
+    saveFromOtherTab(true);
+    expect(rows()).toContain("Saved in another tab");
+  });
+
+  it("an Undo with nothing to restore writes nothing", () => {
+    press($(`[aria-label="Remove ${SHELF}"]`)!);
+    // Another tab already put it back.
+    const list = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    const restored = JSON.stringify([{ id: "1", title: SHELF, body: "x", status: "Published", section: "Studio", date: "23 Aug 2026" }, ...list]);
+    localStorage.setItem(STORAGE_KEY, restored);
+    press(button("Undo"));
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(restored);
+  });
 });
 
 describe("remove and undo", () => {
@@ -163,5 +221,30 @@ describe("batch Undo", () => {
     expect(rowIds()).toEqual(before);
     // Back on the restored row removed last (it was second in the list).
     expect(document.activeElement).toBe(removeButton(1));
+  });
+});
+
+describe("Show more after web fonts load", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Reflect.deleteProperty(document, "fonts");
+  });
+
+  it("measures again when fonts are ready, so text a late font clips gets Show more", async () => {
+    act(() => root.unmount());
+    let fontsReady!: () => void;
+    const ready = new Promise<void>((resolve) => { fontsReady = resolve; });
+    Object.defineProperty(document, "fonts", { configurable: true, value: { ready, addEventListener: vi.fn(), removeEventListener: vi.fn() } });
+    let fontLoaded = false;
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(200);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return fontLoaded && this.classList.contains("as-row-detail") ? 260 : 200;
+    });
+    root = createRoot(host);
+    act(() => root.render(<Home />));
+    expect(button("Show more")).toBeUndefined();
+    fontLoaded = true;
+    await act(async () => { fontsReady(); await ready; });
+    expect(button("Show more")).toBeDefined();
   });
 });
